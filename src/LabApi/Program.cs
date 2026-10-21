@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -45,6 +46,16 @@ builder.Services
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
 
+// US-7: one shared Redis connection. abortConnect=false lets the API start, and keep
+// reconnecting in the background, even when Redis is down. FailFast makes commands fail
+// immediately while disconnected, instead of queueing for 5s hoping Redis comes back.
+builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+{
+    var redisOptions = ConfigurationOptions.Parse(builder.Configuration.GetConnectionString("Redis")!);
+    redisOptions.BacklogPolicy = BacklogPolicy.FailFast;
+    return ConnectionMultiplexer.Connect(redisOptions);
+});
+
 var app = builder.Build();
 
 app.UseAuthentication();
@@ -72,9 +83,35 @@ app.MapGet("/api/admin", (ClaimsPrincipal user) => new
 }).RequireAuthorization("AdminOnly");
 
 // US-6: deliberately slow, so caching has something to improve.
-app.MapGet("/api/products", async () =>
+// US-7: cache-aside in Redis — try the cache, else do the slow load and store it for 60s.
+// Redis is an optimisation, not a dependency: if it's down we just skip the cache.
+app.MapGet("/api/products", async (IConnectionMultiplexer redis, ILogger<Program> logger) =>
 {
+    const string cacheKey = "products:all";
+    var cache = redis.GetDatabase();
+
+    try
+    {
+        var cachedJson = await cache.StringGetAsync(cacheKey);
+        if (cachedJson.HasValue)
+            return new ProductsResponse(Cached: true, JsonSerializer.Deserialize<Product[]>(cachedJson.ToString())!);
+    }
+    catch (Exception ex) when (ex is RedisException or TimeoutException)
+    {
+        logger.LogWarning("Redis unavailable, reading without cache: {Message}", ex.Message);
+    }
+
     var products = await LoadProductsSlowly();
+
+    try
+    {
+        await cache.StringSetAsync(cacheKey, JsonSerializer.Serialize(products), TimeSpan.FromSeconds(60));
+    }
+    catch (Exception ex) when (ex is RedisException or TimeoutException)
+    {
+        logger.LogWarning("Redis unavailable, not caching: {Message}", ex.Message);
+    }
+
     return new ProductsResponse(Cached: false, products);
 });
 
