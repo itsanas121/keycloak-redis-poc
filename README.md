@@ -23,6 +23,7 @@ The `lab` realm is re-imported from `keycloak/import/lab-realm.json` on every st
 | Client       | `lab-api` (public, direct access grants on; tokens carry `aud: lab-api`) |
 | Realm role   | `admin`                                        |
 | Test user    | `testuser` / `testpass`, has role `admin`      |
+| Test user    | `plainuser` / `plainpass`, no `admin` role (gets 403 on `/api/admin`) |
 
 ## Get an access token
 

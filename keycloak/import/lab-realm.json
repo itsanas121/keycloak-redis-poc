@@ -50,6 +50,22 @@
         }
       ],
       "realmRoles": ["default-roles-lab", "admin"]
+    },
+    {
+      "username": "plainuser",
+      "enabled": true,
+      "email": "plainuser@lab.local",
+      "emailVerified": true,
+      "firstName": "Plain",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "plainpass",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["default-roles-lab"]
     }
   ]
 }

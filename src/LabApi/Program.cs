@@ -24,10 +24,26 @@ builder.Services
             ValidateIssuerSigningKey = true,  // signature must match Keycloak's public key
             ValidateLifetime = true,          // must not be expired
             ClockSkew = TimeSpan.Zero,        // default is 5 min of grace after expiry; we want none
-            NameClaimType = "preferred_username"
+            NameClaimType = "preferred_username",
+            RoleClaimType = "role"
+        };
+        options.Events = new JwtBearerEvents
+        {
+            // Keycloak nests realm roles as "realm_access": { "roles": [ ... ] }, which .NET
+            // doesn't understand. Copy each one into a flat "role" claim so RequireRole works.
+            OnTokenValidated = context =>
+            {
+                var identity = (ClaimsIdentity)context.Principal!.Identity!;
+                foreach (var role in RealmRoles(identity))
+                    identity.AddClaim(new Claim("role", role));
+                return Task.CompletedTask;
+            }
         };
     });
-builder.Services.AddAuthorization();
+
+// US-5: authorization — a valid token is not enough, it must also carry the admin role.
+builder.Services.AddAuthorizationBuilder()
+    .AddPolicy("AdminOnly", policy => policy.RequireRole("admin"));
 
 var app = builder.Build();
 
@@ -46,15 +62,20 @@ app.MapGet("/api/protected", (ClaimsPrincipal user) => new
 {
     message = "Your Keycloak token is valid.",
     username = user.Identity?.Name,
-    roles = RealmRoles(user)
+    roles = user.FindAll("role").Select(c => c.Value)
 }).RequireAuthorization();
+
+// US-5: 401 without a valid token, 403 with a valid token that lacks the admin role.
+app.MapGet("/api/admin", (ClaimsPrincipal user) => new
+{
+    message = $"Welcome, {user.Identity?.Name}. You have the admin role."
+}).RequireAuthorization("AdminOnly");
 
 app.Run();
 
-// Keycloak puts realm roles in a nested claim: "realm_access": { "roles": [ ... ] }
-static string[] RealmRoles(ClaimsPrincipal user)
+static string[] RealmRoles(ClaimsIdentity identity)
 {
-    var realmAccess = user.FindFirst("realm_access")?.Value;
+    var realmAccess = identity.FindFirst("realm_access")?.Value;
     if (realmAccess is null) return [];
 
     using var json = JsonDocument.Parse(realmAccess);
