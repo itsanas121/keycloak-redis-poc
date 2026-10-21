@@ -15,7 +15,7 @@ Verify end to end that an API can delegate authentication to Keycloak and valida
 
 ## Stack
 
-- .NET 8 Web API (minimal API or controllers — either)
+- .NET 10 Web API (minimal API or controllers — either)
 - Keycloak 26, dev mode, in Docker
 - Redis 7, in Docker
 - Docker Compose for both services
