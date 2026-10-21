@@ -71,7 +71,27 @@ app.MapGet("/api/admin", (ClaimsPrincipal user) => new
     message = $"Welcome, {user.Identity?.Name}. You have the admin role."
 }).RequireAuthorization("AdminOnly");
 
+// US-6: deliberately slow, so caching has something to improve.
+app.MapGet("/api/products", async () =>
+{
+    var products = await LoadProductsSlowly();
+    return new ProductsResponse(Cached: false, products);
+});
+
 app.Run();
+
+// Stands in for a slow database query.
+static async Task<Product[]> LoadProductsSlowly()
+{
+    await Task.Delay(TimeSpan.FromSeconds(2));
+    return
+    [
+        new(1, "Keyboard", 49.99m),
+        new(2, "Mouse", 19.99m),
+        new(3, "Monitor", 189.00m),
+        new(4, "Headset", 59.50m)
+    ];
+}
 
 static string[] RealmRoles(ClaimsIdentity identity)
 {
@@ -83,3 +103,7 @@ static string[] RealmRoles(ClaimsIdentity identity)
         ? roles.EnumerateArray().Select(r => r.GetString()!).ToArray()
         : [];
 }
+
+record Product(int Id, string Name, decimal Price);
+
+record ProductsResponse(bool Cached, Product[] Products);
