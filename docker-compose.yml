@@ -1,0 +1,19 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0.7
+    # --import-realm loads every *.json in /opt/keycloak/data/import on startup.
+    # The realm is not persisted in a volume: `docker compose down` discards it,
+    # and the next `up` re-imports it from keycloak/import/lab-realm.json.
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./keycloak/import:/opt/keycloak/data/import:ro
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
